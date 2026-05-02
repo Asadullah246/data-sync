@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Environment (contains credentials)
+.env
+
+# Runtime data output
+data/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
