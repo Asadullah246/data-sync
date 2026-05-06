@@ -46,7 +46,34 @@ async function poll() {
     // 3. Append new records to JSONL file
     storage.appendRecords(records);
 
-    // 4. Update high-water mark to the max id from this batch
+    // 4. Send records to the Webhook
+    if (config.webhook.url && config.webhook.apiKey) {
+      console.log(`\n🚀 Forwarding ${records.length} records to webhook...`);
+      try {
+        const webhookResponse = await fetch(config.webhook.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': config.webhook.apiKey
+          },
+          body: JSON.stringify(records)
+        });
+
+        if (!webhookResponse.ok) {
+          const errText = await webhookResponse.text().catch(() => 'No response body');
+          console.error(`   ❌ Webhook failed! Status: ${webhookResponse.status} ${webhookResponse.statusText}`);
+          console.error(`      Webhook Response: ${errText}`);
+        } else {
+          const successText = await webhookResponse.text().catch(() => 'No Content');
+          console.log(`   ✅ Data successfully sent to webhook!`);
+          console.log(`      Webhook Response:`, successText);
+        }
+      } catch (webhookError) {
+        console.error(`   ❌ Webhook network error:`, webhookError.message);
+      }
+    }
+
+    // 5. Update high-water mark to the max id from this batch
     const newLastId = records[records.length - 1].id;
     storage.saveState(newLastId);
 

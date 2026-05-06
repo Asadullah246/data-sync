@@ -45,6 +45,10 @@ const config = Object.freeze({
   pollIntervalMinutes: parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 30,
   outputFile: path.resolve(__dirname, '..', process.env.OUTPUT_FILE || './data/records.jsonl'),
   stateFile: path.resolve(__dirname, '..', process.env.STATE_FILE || './data/state.json'),
+  webhook: {
+    url: process.env.WEBHOOK_URL,
+    apiKey: process.env.WEBHOOK_API_KEY,
+  }
 });
 
 module.exports = config;

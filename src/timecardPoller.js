@@ -101,29 +101,29 @@ async function fetchTimeCardData() {
 
     // 4. Send the data to the Webhook
     console.log('\n🚀 Forwarding data to webhook...');
-    try {
-      const webhookResponse = await fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': WEBHOOK_API_KEY
-        },
-        body: JSON.stringify(data)
-      });
+    // try {
+    //   const webhookResponse = await fetch(WEBHOOK_URL, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'x-api-key': WEBHOOK_API_KEY
+    //     },
+    //     body: JSON.stringify(data)
+    //   });
 
-      if (!webhookResponse.ok) {
-        const errText = await webhookResponse.text().catch(() => 'No response body');
-        console.error(`❌ Webhook failed! Status: ${webhookResponse.status} ${webhookResponse.statusText}`);
-        console.error(`   Webhook Response: ${errText}`);
-      } else {
-        // Parse the response as text first, just in case it's empty or not JSON
-        const successText = await webhookResponse.text().catch(() => 'No Content');
-        console.log(`✅ Data successfully sent to webhook!`);
-        console.log(`   Webhook Response:`, successText);
-      }
-    } catch (webhookError) {
-      console.error(`❌ Webhook network error:`, webhookError.message);
-    }
+    //   if (!webhookResponse.ok) {
+    //     const errText = await webhookResponse.text().catch(() => 'No response body');
+    //     console.error(`❌ Webhook failed! Status: ${webhookResponse.status} ${webhookResponse.statusText}`);
+    //     console.error(`   Webhook Response: ${errText}`);
+    //   } else {
+    //     // Parse the response as text first, just in case it's empty or not JSON
+    //     const successText = await webhookResponse.text().catch(() => 'No Content');
+    //     console.log(`✅ Data successfully sent to webhook!`);
+    //     console.log(`   Webhook Response:`, successText);
+    //   }
+    // } catch (webhookError) {
+    //   console.error(`❌ Webhook network error:`, webhookError.message);
+    // }
 
   } catch (error) {
     console.error('\n❌ Error fetching time card data (Detailed):');
