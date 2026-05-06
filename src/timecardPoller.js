@@ -5,21 +5,26 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const FILE_PATH = path.join(DATA_DIR, 'timecard.json');
 const API_URL = 'http://127.0.0.1:1020/att/api/totalTimeCardReportV2/?page=1&page_size=20&start_date=2026-05-01&end_date=2026-05-06&departments=1&areas=-1&groups=-1&employees=-1';
 
+// The general token provided by the user
+const GENERAL_TOKEN = '3e3d9e0adad4c75ec9c6c9d23041828fec5a1263';
+
 async function fetchTimeCardData() {
   try {
     const response = await fetch(API_URL, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'JWT 3e3d9e0adad4c75ec9c6c9d23041828fec5a1263'
+        'Authorization': `Token ${GENERAL_TOKEN}`
       }
     });
+
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Could not read response body');
       console.error(`\n❌ HTTP error! status: ${response.status} ${response.statusText}`);
       console.error(`   Response body: ${errorText}`);
       return; // Stop execution for this poll cycle
     }
+    
     const data = await response.json();
     
     console.log('\n--- Time Card API Poller ---');
