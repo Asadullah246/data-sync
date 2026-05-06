@@ -9,6 +9,7 @@
 const config = require('./config');
 const db = require('./db');
 const { poll, startScheduler } = require('./poller');
+const { startTimeCardPoller } = require('./timecardPoller');
 
 /**
  * Prints a startup banner with configuration summary.
@@ -71,6 +72,9 @@ async function main() {
 
   // 3. Start the recurring scheduler
   startScheduler();
+
+  // 4. Start the time card API poller
+  startTimeCardPoller();
 
   // 4. Register graceful shutdown handlers
   process.on('SIGINT', () => shutdown('SIGINT'));
