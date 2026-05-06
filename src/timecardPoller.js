@@ -7,7 +7,13 @@ const API_URL = 'http://127.0.0.1:1020/att/api/totalTimeCardReportV2/?page=1&pag
 
 async function fetchTimeCardData() {
   try {
-    const response = await fetch(API_URL);
+    const response = await fetch(API_URL, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'JWT 3e3d9e0adad4c75ec9c6c9d23041828fec5a1263'
+      }
+    });
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Could not read response body');
       console.error(`\n❌ HTTP error! status: ${response.status} ${response.statusText}`);
