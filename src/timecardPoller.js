@@ -4,16 +4,19 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const FILE_PATH = path.join(DATA_DIR, 'timecard.json');
 
+require('dotenv').config();
+
 // BioTime Config
-const BASE_URL = 'http://127.0.0.1:1020';
-const AUTH_URL = `${BASE_URL}/jwt-api-token-auth/`;
+const BASE_URL = process.env.BIOTIME_BASE_URL;
+const AUTH_URL = process.env.BIOTIME_AUTH_URL || `${BASE_URL}/jwt-api-token-auth/`;
 const API_URL = `${BASE_URL}/att/api/totalTimeCardReportV2/?page=1&page_size=20&start_date=2026-05-01&end_date=2026-05-06&departments=1&areas=-1&groups=-1&employees=-1`;
-const USERNAME = 'pghbonpara841';
-const PASSWORD = 'Asdf@123';
+const USERNAME = process.env.BIOTIME_USERNAME;
+const PASSWORD = process.env.BIOTIME_PASSWORD;
+const POLL_INTERVAL_SECONDS = parseInt(process.env.TIMECARD_POLL_INTERVAL_SECONDS) || 15;
 
 // Webhook Config
-const WEBHOOK_URL = 'https://hms-srv-dev.genify.live/api/v1/attendance-transactions/webhook';
-const WEBHOOK_API_KEY = '4b0387191d5593c7bb7117c997cf66122b94da1113ce3614f53100c440bf48b6';
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
+const WEBHOOK_API_KEY = process.env.WEBHOOK_API_KEY;
 
 let currentToken = null;
 
@@ -131,12 +134,13 @@ async function fetchTimeCardData() {
 }
 
 function startTimeCardPoller() {
-  console.log('\n⏰ Starting Time Card Poller (Every 15 seconds)...');
+  const intervalMs = POLL_INTERVAL_SECONDS * 1000;
+  console.log(`\n⏰ Starting Time Card Poller (Every ${POLL_INTERVAL_SECONDS} seconds)...`);
   // Initial call
   fetchTimeCardData();
   
-  // Set interval for every 15 seconds (15000 ms)
-  setInterval(fetchTimeCardData, 15000);
+  // Set interval dynamically
+  setInterval(fetchTimeCardData, intervalMs);
 }
 
 module.exports = { startTimeCardPoller };
