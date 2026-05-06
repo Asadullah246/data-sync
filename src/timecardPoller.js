@@ -3,20 +3,77 @@ const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const FILE_PATH = path.join(DATA_DIR, 'timecard.json');
-const API_URL = 'http://127.0.0.1:1020/att/api/totalTimeCardReportV2/?page=1&page_size=20&start_date=2026-05-01&end_date=2026-05-06&departments=1&areas=-1&groups=-1&employees=-1';
 
-// The general token provided by the user
-const GENERAL_TOKEN = '3e3d9e0adad4c75ec9c6c9d23041828fec5a1263';
+// BioTime Config
+const BASE_URL = 'http://127.0.0.1:1020';
+const AUTH_URL = `${BASE_URL}/jwt-api-token-auth/`;
+const API_URL = `${BASE_URL}/att/api/totalTimeCardReportV2/?page=1&page_size=20&start_date=2026-05-01&end_date=2026-05-06&departments=1&areas=-1&groups=-1&employees=-1`;
+const USERNAME = 'pghbonpara841';
+const PASSWORD = 'Asdf@123';
+
+// Webhook Config
+const WEBHOOK_URL = 'https://hms-srv-dev.genify.live/api/v1/attendance-transactions/webhook';
+const WEBHOOK_API_KEY = '4b0387191d5593c7bb7117c997cf66122b94da1113ce3614f53100c440bf48b6';
+
+let currentToken = null;
+
+async function getAuthToken() {
+  try {
+    const response = await fetch(AUTH_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username: USERNAME, password: PASSWORD })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Could not read response body');
+      console.error(`\n❌ Auth failed! status: ${response.status} ${response.statusText}`);
+      console.error(`   Response body: ${errorText}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    return data.token;
+  } catch (error) {
+    console.error('\n❌ Error fetching auth token:', error.message);
+    return null;
+  }
+}
 
 async function fetchTimeCardData() {
   try {
-    const response = await fetch(API_URL, {
+    // 1. Get or refresh token if we don't have one
+    if (!currentToken) {
+      currentToken = await getAuthToken();
+      if (!currentToken) return; // Stop if login failed
+    }
+
+    // 2. Fetch data from BioTime
+    let response = await fetch(API_URL, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Token ${GENERAL_TOKEN}`
+        'Authorization': `JWT ${currentToken}`
       }
     });
+
+    // 3. Handle expired token (401 Unauthorized)
+    if (response.status === 401) {
+      console.log('🔄 Token expired, fetching a new one...');
+      currentToken = await getAuthToken();
+      if (!currentToken) return;
+
+      // Retry the request with the new token
+      response = await fetch(API_URL, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `JWT ${currentToken}`
+        }
+      });
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Could not read response body');
@@ -28,16 +85,43 @@ async function fetchTimeCardData() {
     const data = await response.json();
     
     console.log('\n--- Time Card API Poller ---');
-    console.log(JSON.stringify(data, null, 2));
+    console.log(`✅ BioTime data retrieved successfully!`);
 
     // Ensure data directory exists
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
-    // Save to file
+    // Save to local file
     fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
-    console.log(`✅ Time card data saved to ${FILE_PATH}`);
+    console.log(`✅ Time card data saved locally to ${FILE_PATH}`);
+
+    // 4. Send the data to the Webhook
+    console.log('\n🚀 Forwarding data to webhook...');
+    try {
+      const webhookResponse = await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': WEBHOOK_API_KEY
+        },
+        body: JSON.stringify(data)
+      });
+
+      if (!webhookResponse.ok) {
+        const errText = await webhookResponse.text().catch(() => 'No response body');
+        console.error(`❌ Webhook failed! Status: ${webhookResponse.status} ${webhookResponse.statusText}`);
+        console.error(`   Webhook Response: ${errText}`);
+      } else {
+        // Parse the response as text first, just in case it's empty or not JSON
+        const successText = await webhookResponse.text().catch(() => 'No Content');
+        console.log(`✅ Data successfully sent to webhook!`);
+        console.log(`   Webhook Response:`, successText);
+      }
+    } catch (webhookError) {
+      console.error(`❌ Webhook network error:`, webhookError.message);
+    }
+
   } catch (error) {
     console.error('\n❌ Error fetching time card data (Detailed):');
     console.error('Message:', error.message);
