@@ -48,7 +48,7 @@ async function poll() {
 
     // 4. Send records to the Webhook
     if (config.webhook.url && config.webhook.apiKey) {
-      console.log(`\n🚀 Forwarding ${records.length} records to webhook...`);
+      console.log(`\n🚀 Forwarding ${records.length} transaction records to webhook ...`);
       try {
         const webhookResponse = await fetch(config.webhook.url, {
           method: 'POST',
