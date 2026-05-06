@@ -9,7 +9,10 @@ async function fetchTimeCardData() {
   try {
     const response = await fetch(API_URL);
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text().catch(() => 'Could not read response body');
+      console.error(`\n❌ HTTP error! status: ${response.status} ${response.statusText}`);
+      console.error(`   Response body: ${errorText}`);
+      return; // Stop execution for this poll cycle
     }
     const data = await response.json();
     
@@ -25,7 +28,10 @@ async function fetchTimeCardData() {
     fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
     console.log(`✅ Time card data saved to ${FILE_PATH}`);
   } catch (error) {
-    console.error('❌ Error fetching time card data:', error.message);
+    console.error('\n❌ Error fetching time card data (Detailed):');
+    console.error('Message:', error.message);
+    if (error.cause) console.error('Cause:', error.cause);
+    console.error('Full Error Object:', error);
   }
 }
 
