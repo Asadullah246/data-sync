@@ -52,7 +52,7 @@ function printBanner() {
    Attendance:  ${config.webhook.attendanceUrl || '(not configured)'}
    Timecard:    ${config.webhook.timecardUrl || '(not configured)'}
 
-⏰ Schedule:    Every ${config.pollIntervalMinutes} minute(s)
+⏰ Schedule:    12:00 PM + 12:05 AM daily (+ instant on startup)
 💾 Local Save:  ${config.saveLocal ? 'ON' : 'OFF'}
 `);
 }

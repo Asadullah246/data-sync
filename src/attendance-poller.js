@@ -3,16 +3,10 @@
  *
  * Fetches raw punch records from BioTime's PostgreSQL database
  * and forwards them to the main server. Features:
- *   - Date-based fetching (always yesterday + today)
- *   - No high-water mark needed — server deduplicates via bioTimeId
+ *   - Fetches a single day's data (date passed by scheduler)
+ *   - No high-water mark needed — server deduplicates via bioTimeId @unique
  *   - Overlap protection
  *   - Optional local backup (controlled by SAVE_LOCAL)
- *
- * Why yesterday + today?
- *   If the poll interval is large (e.g., 4 hours), the last poll of one day
- *   might miss late-night punches. By always including yesterday, we guarantee
- *   those records are sent on the next cycle. The server deduplicates via
- *   the unique record `id` (mapped to bioTimeId @unique in Prisma).
  */
 
 const config = require('./config');
@@ -26,47 +20,17 @@ const log = createLogger('AttendancePoller');
 /** Flag to prevent overlapping poll cycles */
 let isPolling = false;
 
-// ─── Date Utilities ─────────────────────────────────────
-
 /**
- * Returns a date string in YYYY-MM-DD format.
- * @param {Date} date
- * @returns {string}
- */
-function formatDate(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/**
- * Returns yesterday and today as a date range.
- * @returns {{ startDate: string, endDate: string }}
- */
-function getDateRange() {
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return {
-    startDate: formatDate(yesterday),
-    endDate: formatDate(today),
-  };
-}
-
-// ─── Poll Function ──────────────────────────────────────
-
-/**
- * Executes one attendance poll cycle:
- *   1. Determine date range (yesterday + today)
- *   2. Query PostgreSQL for all records in that range
- *   3. Optionally save locally
- *   4. Send all records to the main server webhook
+ * Executes one attendance poll cycle for a specific date:
+ *   1. Query PostgreSQL for all records on that date
+ *   2. Optionally save locally
+ *   3. Send all records to the main server webhook
  *
- * The main server handles deduplication — we intentionally send
- * the full day's data every cycle for simplicity and reliability.
+ * The main server handles deduplication via bioTimeId @unique.
+ *
+ * @param {string} date - Date to fetch in YYYY-MM-DD format
  */
-async function pollAttendance() {
+async function pollAttendance(date) {
   if (isPolling) {
     log.warn('Previous poll still running — skipping this cycle.');
     return;
@@ -76,24 +40,22 @@ async function pollAttendance() {
   const startTime = Date.now();
 
   try {
-    // 1. Get date range (yesterday + today)
-    const { startDate, endDate } = getDateRange();
-    log.info(`Polling attendance records: ${startDate} → ${endDate}`);
+    log.info(`Polling attendance records for: ${date}`);
 
-    // 2. Fetch records from PostgreSQL by date range
-    const records = await db.fetchRecordsByDateRange(startDate, endDate);
+    // 1. Fetch records from PostgreSQL for this date
+    const records = await db.fetchRecordsByDateRange(date, date);
 
     if (records.length === 0) {
-      log.info('No attendance records found for the date range.');
+      log.info(`No attendance records found for ${date}.`);
       return;
     }
 
-    log.info(`Found ${records.length} attendance record(s).`);
+    log.info(`Found ${records.length} attendance record(s) for ${date}.`);
 
-    // 3. Save locally (if enabled)
+    // 2. Save locally (if enabled)
     storage.appendAttendanceRecords(records);
 
-    // 4. Send to main server webhook
+    // 3. Send to main server webhook
     if (config.webhook.attendanceUrl) {
       log.info(`Forwarding ${records.length} record(s) to webhook...`);
 

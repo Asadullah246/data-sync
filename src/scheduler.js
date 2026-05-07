@@ -1,17 +1,17 @@
 /**
- * scheduler.js — Unified Cron Scheduler
+ * scheduler.js — Fixed-Time Daily Scheduler
  *
- * Orchestrates both pollers on a single, consistent schedule.
- * Both run every N minutes (default: 30), staggered by 1 minute
- * to avoid concurrent network/CPU pressure.
+ * Orchestrates both pollers on a fixed daily schedule:
  *
- * Schedule (example with 30-min interval):
- *   Attendance Logs:   :00, :30  (on the minute mark)
- *   Timecard Reports:  :01, :31  (1 minute after)
+ *   Startup   → Instant pull for today (testing / verification)
+ *   12:00 PM  → Pull today's data (mid-day snapshot)
+ *   12:05 AM  → Pull yesterday's data (the day just ended — final catch-up)
+ *
+ * Each pull fetches exactly 1 day. The 12:05 AM pull captures any
+ * late-night punches from the previous day that occurred after 12:00 PM.
  */
 
 const cron = require('node-cron');
-const config = require('./config');
 const { pollAttendance } = require('./attendance-poller');
 const { pollTimecard } = require('./timecard-poller');
 const createLogger = require('./logger');
@@ -21,55 +21,78 @@ const log = createLogger('Scheduler');
 /** Active cron tasks (for graceful shutdown) */
 const tasks = [];
 
+// ─── Date Helpers ───────────────────────────────────────
+
 /**
- * Runs initial polls at startup.
- * Both pollers always fetch yesterday + today, so no special
- * backfill logic is needed.
+ * Returns today's date in YYYY-MM-DD format.
+ * @returns {string}
  */
-async function runInitialPolls() {
-  log.info('Running initial polls at startup...');
-
-  // 1. Attendance
-  log.info('─── Initial Attendance Poll ───');
-  await pollAttendance();
-
-  // 2. Timecard
-  log.info('─── Initial Timecard Poll ───');
-  await pollTimecard();
+function getToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /**
- * Starts the cron scheduler for both pollers.
+ * Returns yesterday's date in YYYY-MM-DD format.
+ * @returns {string}
+ */
+function getYesterday() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ─── Poll Runners ───────────────────────────────────────
+
+/**
+ * Runs both pollers for a given date.
+ *
+ * @param {string} date - Date in YYYY-MM-DD format
+ * @param {string} label - Human-readable label for logging
+ */
+async function runBothPollers(date, label) {
+  log.info(`━━━ ${label} — fetching data for ${date} ━━━`);
+
+  log.info('── Attendance Poll ──');
+  await pollAttendance(date);
+
+  log.info('── Timecard Poll ──');
+  await pollTimecard(date);
+}
+
+/**
+ * Runs initial polls at startup with today's date.
+ * Provides instant feedback for testing and verification.
+ */
+async function runInitialPolls() {
+  await runBothPollers(getToday(), 'Initial Pull (startup)');
+}
+
+/**
+ * Starts the fixed-time cron scheduler.
+ *
+ * Schedule:
+ *   12:00 PM  → today's data
+ *   12:05 AM  → yesterday's data (the day that just ended)
  *
  * @returns {object} Scheduler control with stop() method
  */
 function startScheduler() {
-  const interval = config.pollIntervalMinutes;
+  log.info('Scheduler started — fixed daily schedule:');
+  log.info('  12:00 PM  → today\'s data');
+  log.info('  12:05 AM  → yesterday\'s data (catch-up)');
 
-  // Attendance: "*/30 * * * *" → runs at :00, :30
-  const attendanceCron = `*/${interval} * * * *`;
-
-  // Timecard: staggered by 1 minute → runs at :01, :31
-  const timecardOffset = 1;
-  const timecardCron = `${timecardOffset}-59/${interval} * * * *`;
-
-  log.info(`Scheduler started — polling every ${interval} minute(s)`);
-  log.info(`  Attendance:  ${attendanceCron}`);
-  log.info(`  Timecard:    ${timecardCron}`);
-
-  // Schedule attendance poller
-  const attendanceTask = cron.schedule(attendanceCron, async () => {
-    log.info('━━━ Scheduled Attendance Poll ━━━');
-    await pollAttendance();
+  // 1. Mid-day pull — 12:00 PM → fetch today
+  const middayTask = cron.schedule('0 12 * * *', async () => {
+    await runBothPollers(getToday(), 'Mid-Day Pull (12:00 PM)');
   });
-  tasks.push(attendanceTask);
+  tasks.push(middayTask);
 
-  // Schedule timecard poller
-  const timecardTask = cron.schedule(timecardCron, async () => {
-    log.info('━━━ Scheduled Timecard Poll ━━━');
-    await pollTimecard();
+  // 2. Catch-up pull — 12:05 AM → fetch yesterday (the day that just ended)
+  const catchUpTask = cron.schedule('5 0 * * *', async () => {
+    await runBothPollers(getYesterday(), 'Catch-Up Pull (12:05 AM)');
   });
-  tasks.push(timecardTask);
+  tasks.push(catchUpTask);
 
   return {
     stop: () => {

@@ -3,7 +3,7 @@
  *
  * Fetches pre-calculated daily attendance summaries from the BioTime
  * REST API and forwards them to the main server. Features:
- *   - Always fetches yesterday + today (handles overnight gaps)
+ *   - Fetches a single day's data (date passed by scheduler)
  *   - Fetches ALL categories (departments=-1, areas=-1, groups=-1, employees=-1)
  *   - Auto-pagination (loops until all pages are fetched)
  *   - Authenticated via biotime-auth.js (auto-retry on 401)
@@ -22,58 +22,26 @@ const log = createLogger('TimecardPoller');
 /** Flag to prevent overlapping poll cycles */
 let isPolling = false;
 
-// ─── Date Utilities ─────────────────────────────────────
-
-/**
- * Returns a date string in YYYY-MM-DD format.
- * @param {Date} date
- * @returns {string}
- */
-function formatDate(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/**
- * Returns yesterday + today as a date range.
- * Always includes yesterday to handle overnight gaps when the
- * poll interval is large (e.g., 4-12 hours).
- *
- * @returns {{ startDate: string, endDate: string }}
- */
-function getDateRange() {
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return {
-    startDate: formatDate(yesterday),
-    endDate: formatDate(today),
-  };
-}
-
 // ─── BioTime API Fetching ───────────────────────────────
 
 /**
- * Builds the timecard API URL for a specific page and date range.
+ * Builds the timecard API URL for a specific page and date.
  *
  * Uses -1 for all filter params (departments, areas, groups, employees)
  * which means "fetch all" in BioTime's API convention.
  *
- * @param {string} startDate - Start date (YYYY-MM-DD)
- * @param {string} endDate - End date (YYYY-MM-DD)
+ * @param {string} date - Date in YYYY-MM-DD format
  * @param {number} page - Page number (1-indexed)
  * @returns {string} Full API URL
  */
-function buildTimecardUrl(startDate, endDate, page) {
+function buildTimecardUrl(date, page) {
   const pageSize = config.biotime.pageSize;
   return (
     `${config.biotime.baseUrl}/att/api/totalTimeCardReportV2/` +
     `?page=${page}` +
     `&page_size=${pageSize}` +
-    `&start_date=${startDate}` +
-    `&end_date=${endDate}` +
+    `&start_date=${date}` +
+    `&end_date=${date}` +
     `&departments=-1` +
     `&areas=-1` +
     `&groups=-1` +
@@ -82,21 +50,20 @@ function buildTimecardUrl(startDate, endDate, page) {
 }
 
 /**
- * Fetches ALL pages of timecard data for the given date range.
+ * Fetches ALL pages of timecard data for the given date.
  * Loops through paginated results until `next` is null.
  *
- * @param {string} startDate - Start date (YYYY-MM-DD)
- * @param {string} endDate - End date (YYYY-MM-DD)
+ * @param {string} date - Date in YYYY-MM-DD format
  * @returns {Promise<Array<Object>>} All timecard records combined
  */
-async function fetchAllPages(startDate, endDate) {
+async function fetchAllPages(date) {
   const allRecords = [];
   let page = 1;
   let hasMore = true;
 
   while (hasMore) {
-    const url = buildTimecardUrl(startDate, endDate, page);
-    log.info(`Fetching page ${page}: ${startDate} → ${endDate}`);
+    const url = buildTimecardUrl(date, page);
+    log.info(`Fetching page ${page} for ${date}...`);
 
     const result = await biotimeAuth.authenticatedGet(url);
 
@@ -131,16 +98,16 @@ async function fetchAllPages(startDate, endDate) {
 // ─── Poll Function ──────────────────────────────────────
 
 /**
- * Executes one timecard poll cycle:
- *   1. Determine date range (yesterday + today)
- *   2. Fetch all pages from BioTime API
- *   3. Optionally save locally as daily snapshots
- *   4. Send to main server webhook
+ * Executes one timecard poll cycle for a specific date:
+ *   1. Fetch all pages from BioTime API for that date
+ *   2. Optionally save locally as a daily snapshot
+ *   3. Send to main server webhook
  *
- * Always includes yesterday to handle overnight gaps.
  * Server should upsert by (emp_code, att_date).
+ *
+ * @param {string} date - Date to fetch in YYYY-MM-DD format
  */
-async function pollTimecard() {
+async function pollTimecard(date) {
   if (isPolling) {
     log.warn('Previous poll still running — skipping this cycle.');
     return;
@@ -150,42 +117,27 @@ async function pollTimecard() {
   const startTime = Date.now();
 
   try {
-    // 1. Date range: yesterday + today
-    const { startDate, endDate } = getDateRange();
-    log.info(`Polling timecard data: ${startDate} → ${endDate}`);
+    log.info(`Polling timecard data for: ${date}`);
 
-    // 2. Fetch all pages from BioTime API
-    const records = await fetchAllPages(startDate, endDate);
+    // 1. Fetch all pages from BioTime API
+    const records = await fetchAllPages(date);
 
     if (records.length === 0) {
-      log.info('No timecard records found for the date range.');
+      log.info(`No timecard records found for ${date}.`);
       return;
     }
 
-    log.info(`Fetched ${records.length} total timecard record(s).`);
+    log.info(`Fetched ${records.length} total timecard record(s) for ${date}.`);
 
-    // 3. Save locally (if enabled) — grouped by date
-    if (config.saveLocal) {
-      const recordsByDate = {};
-      for (const record of records) {
-        const date = record.att_date || record.att_date_normal || startDate;
-        if (!recordsByDate[date]) {
-          recordsByDate[date] = [];
-        }
-        recordsByDate[date].push(record);
-      }
+    // 2. Save locally (if enabled)
+    storage.saveTimecardSnapshot(date, records);
 
-      for (const [date, dateRecords] of Object.entries(recordsByDate)) {
-        storage.saveTimecardSnapshot(date, dateRecords);
-      }
-    }
-
-    // 4. Send to main server webhook
+    // 3. Send to main server webhook
     if (config.webhook.timecardUrl) {
       log.info(`Forwarding ${records.length} timecard record(s) to webhook...`);
 
       const payload = {
-        dateRange: { startDate, endDate },
+        date,
         fetchedAt: new Date().toISOString(),
         records,
       };
