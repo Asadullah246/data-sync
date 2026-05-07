@@ -1,116 +1,108 @@
 /**
- * storage.js — File I/O & State Management
+ * storage.js — Local File Storage (Optional)
  *
- * Manages the JSONL output file and the high-water mark state file.
- * - JSONL: one JSON object per line, append-only (no full-file reads needed)
- * - State: small JSON file tracking the last processed record id
+ * Saves data locally for backup/debugging purposes.
+ * Controlled by SAVE_LOCAL env variable:
+ *   - true  → writes attendance JSONL and timecard snapshots to disk
+ *   - false → all write operations are no-ops (production mode)
+ *
+ * File types:
+ *   - attendance.jsonl          → append-only punch log backup
+ *   - timecard-YYYY-MM-DD.json → daily timecard report snapshots
  */
 
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const createLogger = require('./logger');
+
+const log = createLogger('Storage');
+
+// ─── Helpers ────────────────────────────────────────────
 
 /**
  * Ensures the parent directory of a file path exists.
- * Creates it recursively if it doesn't.
  * @param {string} filePath - Absolute path to a file
  */
 function ensureDirectory(filePath) {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
-    console.log(`📁 Created directory: ${dir}`);
+    log.info(`Created directory: ${dir}`);
   }
 }
 
+// ─── Attendance Log Storage ─────────────────────────────
+
 /**
- * Loads the high-water mark state from disk.
- * Returns a default state if the file doesn't exist or is corrupted.
- *
- * @returns {{ lastId: number, updatedAt: string | null }}
+ * Returns the path to the attendance JSONL file.
+ * @returns {string}
  */
-function loadState() {
-  try {
-    if (fs.existsSync(config.stateFile)) {
-      const raw = fs.readFileSync(config.stateFile, 'utf-8');
-      const state = JSON.parse(raw);
-
-      // Validate the loaded state
-      if (typeof state.lastId === 'number' && state.lastId >= 0) {
-        return state;
-      }
-
-      console.warn('⚠️  State file has invalid format. Resetting to default.');
-    }
-  } catch (err) {
-    console.warn(`⚠️  Could not read state file: ${err.message}. Resetting to default.`);
-  }
-
-  return { lastId: 0, updatedAt: null };
+function getAttendanceFilePath() {
+  return path.join(config.storage.outputDir, 'attendance.jsonl');
 }
 
 /**
- * Persists the high-water mark state to disk.
- * Writes atomically by writing to a temp file first, then renaming.
+ * Appends attendance records to the JSONL backup file.
+ * No-op when SAVE_LOCAL is false.
  *
- * @param {number} lastId - The new high-water mark
+ * @param {Array<Object>} records - Array of attendance transaction objects
  */
-function saveState(lastId) {
-  ensureDirectory(config.stateFile);
+function appendAttendanceRecords(records) {
+  if (!config.saveLocal) return;
+  if (!records || records.length === 0) return;
 
-  const state = {
-    lastId,
-    updatedAt: new Date().toISOString(),
+  const filePath = getAttendanceFilePath();
+  ensureDirectory(filePath);
+
+  const lines = records.map((record) => JSON.stringify(record)).join('\n') + '\n';
+  fs.appendFileSync(filePath, lines, 'utf-8');
+
+  log.info(`Appended ${records.length} attendance record(s) to ${path.basename(filePath)}`);
+}
+
+// ─── Timecard Report Storage ────────────────────────────
+
+/**
+ * Returns the path to a timecard snapshot file for a specific date.
+ * @param {string} date - Date string in YYYY-MM-DD format
+ * @returns {string}
+ */
+function getTimecardFilePath(date) {
+  return path.join(config.storage.outputDir, `timecard-${date}.json`);
+}
+
+/**
+ * Saves a timecard snapshot for a specific date.
+ * Overwrites any existing snapshot (data updates throughout the day).
+ * No-op when SAVE_LOCAL is false.
+ *
+ * @param {string} date - Date string in YYYY-MM-DD format
+ * @param {Array<Object>} records - Array of timecard report records
+ */
+function saveTimecardSnapshot(date, records) {
+  if (!config.saveLocal) return;
+  if (!records) return;
+
+  const filePath = getTimecardFilePath(date);
+  ensureDirectory(filePath);
+
+  const snapshot = {
+    date,
+    fetchedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
   };
 
-  // Atomic write: write to temp file, then rename
-  const tempFile = `${config.stateFile}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(state, null, 2), 'utf-8');
-  fs.renameSync(tempFile, config.stateFile);
-}
+  // Atomic write
+  const tempFile = `${filePath}.tmp`;
+  fs.writeFileSync(tempFile, JSON.stringify(snapshot, null, 2), 'utf-8');
+  fs.renameSync(tempFile, filePath);
 
-/**
- * Appends an array of records to the JSONL output file.
- * Each record is serialized as a single JSON line.
- *
- * @param {Array<Object>} records - Array of database row objects
- */
-function appendRecords(records) {
-  if (!records || records.length === 0) {
-    return;
-  }
-
-  ensureDirectory(config.outputFile);
-
-  // Build JSONL content: one JSON object per line
-  const lines = records.map((record) => JSON.stringify(record)).join('\n') + '\n';
-
-  fs.appendFileSync(config.outputFile, lines, 'utf-8');
-}
-
-/**
- * Returns the current record count in the JSONL file.
- * Useful for logging/diagnostics.
- *
- * @returns {number} Number of lines (records) in the output file
- */
-function getRecordCount() {
-  try {
-    if (!fs.existsSync(config.outputFile)) {
-      return 0;
-    }
-
-    const content = fs.readFileSync(config.outputFile, 'utf-8');
-    // Count non-empty lines
-    return content.split('\n').filter((line) => line.trim().length > 0).length;
-  } catch {
-    return 0;
-  }
+  log.info(`Saved ${records.length} timecard record(s) for ${date} to ${path.basename(filePath)}`);
 }
 
 module.exports = {
-  loadState,
-  saveState,
-  appendRecords,
-  getRecordCount,
+  appendAttendanceRecords,
+  saveTimecardSnapshot,
 };
