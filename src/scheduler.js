@@ -83,7 +83,7 @@ function startScheduler() {
   log.info('  12:05 AM  → yesterday\'s data (catch-up)');
 
   // 1. Mid-day pull — 12:00 PM → fetch today
-  const middayTask = cron.schedule('0 12 * * *', async () => {
+  const middayTask = cron.schedule('54 12 * * *', async () => {
     await runBothPollers(getToday(), 'Mid-Day Pull (12:00 PM)');
   });
   tasks.push(middayTask);
