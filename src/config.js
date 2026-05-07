@@ -54,9 +54,6 @@ const config = Object.freeze({
   /** Target table name in BioTime database */
   tableName: process.env.TABLE_NAME,
 
-  /** Polling interval in minutes (default: 30) */
-  pollIntervalMinutes: parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 30,
-
   /** BioTime REST API settings */
   biotime: Object.freeze({
     baseUrl: process.env.BIOTIME_BASE_URL,
