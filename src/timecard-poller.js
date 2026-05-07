@@ -27,8 +27,8 @@ let isPolling = false;
 /**
  * Builds the timecard API URL for a specific page and date.
  *
- * Uses -1 for all filter params (departments, areas, groups, employees)
- * which means "fetch all" in BioTime's API convention.
+ * Uses a large page_size to fetch all records in a single request.
+ * Still supports pagination in case the dataset exceeds one page.
  *
  * @param {string} date - Date in YYYY-MM-DD format
  * @param {number} page - Page number (1-indexed)
@@ -36,18 +36,22 @@ let isPolling = false;
  */
 function buildTimecardUrl(date, page) {
   const pageSize = config.biotime.pageSize;
+  const areaCode = config.biotime.areaCode;
   return (
     `${config.biotime.baseUrl}/att/api/totalTimeCardReportV2/` +
     `?page=${page}` +
     `&page_size=${pageSize}` +
     `&start_date=${date}` +
     `&end_date=${date}` +
+    `&areas=${areaCode}` +
     `&departments=-1` +
-    `&areas=-1` +
-    `&groups=-1` +
-    `&employees=-1`
+    `&groups=-1`
   );
 }
+
+
+// http://127.0.0.1:1020/att/api/totalTimeCardReportV2/?page=1&page_size=10000&start_date=2026-05-01&end_date=2026-05-07&departments=-1&areas=2&groups=-1&employees=-1
+
 
 /**
  * Fetches ALL pages of timecard data for the given date.

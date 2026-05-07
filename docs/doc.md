@@ -5,7 +5,10 @@ Asdf@123
 atuledump6@gmail.com
 
 
+http://127.0.0.1:1020/att/api/totalTimeCardReportV2/?page=1&page_size=200&start_date=2026-05-07&end_date=2026-05-07&departments=-1&areas=-1&groups=-1&employees=-1
 
+
+http://127.0.0.1:1020/att/api/totalTimeCardReportV2/?page=1&page_size=20&start_date=2026-05-01&end_date=2026-05-07&departments=1&areas=-1&groups=-1&employees=-1
 
 
 

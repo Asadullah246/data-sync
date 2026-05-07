@@ -60,7 +60,8 @@ const config = Object.freeze({
     authUrl: `${process.env.BIOTIME_BASE_URL}/jwt-api-token-auth/`,
     username: process.env.BIOTIME_USERNAME,
     password: process.env.BIOTIME_PASSWORD,
-    pageSize: parseInt(process.env.BIOTIME_PAGE_SIZE, 10) || 200,
+    pageSize: parseInt(process.env.BIOTIME_PAGE_SIZE, 10) || 10000,
+    areaCode: process.env.BIOTIME_AREA_CODE || '2',
   }),
 
   /** Webhook endpoints on the main server */
